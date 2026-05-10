@@ -106,7 +106,7 @@ class StructuredPruner(BaseCompressor):
         self.layer_types = layer_types
 
     def compress(self, model: nn.Module) -> tuple[nn.Module, dict]:
-        """Prune *model* with structured L2 norm pruning."""
+        """Prune *model* with structured L2-norm pruning."""
         model_copy = self._copy_model(model)
 
         for module in model_copy.modules():
@@ -115,8 +115,8 @@ class StructuredPruner(BaseCompressor):
                     module,
                     name="weight",
                     amount=self.sparsity,
-                    n=2,
-                    dim=0,
+                    n=2,  # L2 norm
+                    dim=0,  # Prune output channels/neurons
                 )
                 prune.remove(module, "weight")
 

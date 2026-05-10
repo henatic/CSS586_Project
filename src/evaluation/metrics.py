@@ -122,40 +122,24 @@ def measure_latency(
 def compute_sparsity(
     model: nn.Module,
     layer_types: tuple[type[nn.Module], ...] = (nn.Linear, nn.Conv2d),
-) -> dict[str, float]:
-    """Compute the weight sparsity of the model.
+) -> float:
+    """Compute global sparsity over all weight parameters in *layer_types*.
 
     Parameters
     ----------
     model:
-        Any ``nn.Module``.
+        The model to evaluate.
     layer_types:
-        Only weights belonging to layers of these types are considered.
+        A tuple of layer types to include in the sparsity calculation.
 
     Returns
     -------
-    dict with keys:
-
-    * ``"global_sparsity"`` – fraction of zeros across all selected weights.
-    * ``"layer_sparsities"`` – mapping of ``module_name`` → per-layer sparsity.
+    Global sparsity as a float in [0, 1].
     """
-    total_weights = 0
+    total_params = 0
     total_zeros = 0
-    layer_sparsities: dict[str, float] = {}
-
-    for name, module in model.named_modules():
+    for module in model.modules():
         if isinstance(module, layer_types):
-            weight = module.weight  # type: ignore[attr-defined]
-            if weight is None:
-                continue
-            n = weight.numel()
-            z = int((weight == 0).sum().item())
-            total_weights += n
-            total_zeros += z
-            layer_sparsities[name] = z / n if n > 0 else 0.0
-
-    global_sparsity = total_zeros / total_weights if total_weights > 0 else 0.0
-    return {
-        "global_sparsity": global_sparsity,
-        "layer_sparsities": layer_sparsities,
-    }
+            total_params += module.weight.numel()
+            total_zeros += int(torch.sum(module.weight == 0).item())
+    return total_zeros / total_params if total_params > 0 else 0.0

@@ -102,7 +102,7 @@ class CompressionPipeline:
             report["stages"].append(
                 {
                     "stage_index": idx,
-                    "technique": meta.get("technique", type(compressor).__name__),
+                    "technique": meta.get("technique", "unknown"),
                     "config": meta.get("config", {}),
                     "duration_s": stage_duration,
                     "metrics_before": metrics_before,
@@ -118,14 +118,7 @@ class CompressionPipeline:
     # ------------------------------------------------------------------
 
     def _evaluate(self, model: nn.Module) -> dict[str, Any]:
-        results: dict[str, Any] = {}
-        for name, fn in self.eval_fns.items():
-            try:
-                results[name] = fn(model)
-            except Exception as exc:  # noqa: BLE001
-                results[name] = f"error: {exc}"
-        return results
-
-    def __repr__(self) -> str:  # pragma: no cover
-        stage_names = [type(s).__name__ for s in self.stages]
-        return f"CompressionPipeline(stages={stage_names})"
+        """Run all evaluation functions on *model*."""
+        if not self.eval_fns:
+            return {}
+        return {name: fn(model) for name, fn in self.eval_fns.items()}

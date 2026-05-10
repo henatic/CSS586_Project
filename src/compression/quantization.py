@@ -98,6 +98,34 @@ class StaticQuantizer(BaseCompressor):
         model_copy = self._copy_model(model)
         model_copy.eval()
 
+        # Fuse modules for better quantization performance
+        torch.quantization.fuse_modules(
+            model_copy, [["conv", "relu"]], inplace=True
+        )
+
+        # Set quantization configuration
+        model_copy.qconfig = torch.quantization.get_default_qconfig(self.backend)
+        torch.quantization.prepare(model_copy, inplace=True)
+
+        # Calibrate the model with the provided data loader
+        with torch.no_grad():
+            for i, (inputs, _) in enumerate(self.calibration_loader):
+                if i >= self.num_calibration_batches:
+                    break
+                model_copy(inputs)
+
+        # Convert the model to a quantized version
+        torch.quantization.convert(model_copy, inplace=True)
+
+        metadata = {
+            "technique": "static_quantization",
+            "config": {
+                "backend": self.backend,
+                "num_calibration_batches": self.num_calibration_batches,
+            },
+        }
+        return model_copy, metadata
+
         model_copy.qconfig = tq.get_default_qconfig(self.backend)
         tq.prepare(model_copy, inplace=True)
 

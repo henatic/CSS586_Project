@@ -102,58 +102,39 @@ class ZeroShotDistiller(BaseCompressor):
     # ------------------------------------------------------------------
 
     def compress(self, model: nn.Module) -> tuple[nn.Module, dict]:
-        """Distil knowledge from *model* (teacher) into ``self.student``.
+        """Run zero-shot distillation from *model* (teacher) to student.
 
-        Parameters
-        ----------
-        model:
-            The teacher model.  Its weights are not modified.
-
-        Returns
-        -------
-        student:
-            The distilled student model (on ``self.device``).
-        metadata:
-            Technique metadata dictionary.
+        Returns the trained student model and metadata.
         """
-        teacher = model.to(self.device)
+        teacher = self._copy_model(model).to(self.device)
         teacher.eval()
         for param in teacher.parameters():
-            param.requires_grad_(False)
+            param.requires_grad = False
 
         student = self.student.to(self.device)
         student.train()
-        student_optimizer = torch.optim.Adam(
-            student.parameters(), lr=self.distillation_lr
-        )
 
-        for step in range(self.num_distillation_steps):
-            # 1. Synthesise a pseudo-input batch guided by teacher activations.
-            pseudo_inputs = self._synthesise_inputs(teacher)
+        # Optimizers
+        student_optimizer = torch.optim.Adam(student.parameters(), lr=self.distillation_lr)
 
-            # 2. Compute teacher soft targets.
+        # Collect BN statistics from the teacher
+        bn_stats = self._collect_bn_stats(teacher)
+
+        for _ in range(self.num_distillation_steps):
+            # 1. Synthesize a batch of pseudo-inputs from the teacher
+            inputs = self._synthesize_inputs(teacher, bn_stats)
+
+            # 2. Get soft targets from the teacher
             with torch.no_grad():
-                teacher_logits = teacher(pseudo_inputs)
-                soft_targets = F.softmax(
-                    teacher_logits / self.temperature, dim=-1
-                )
+                teacher_logits = teacher(inputs)
 
-            # 3. Update student to match soft targets.
-            student_logits = student(pseudo_inputs)
-            student_log_probs = F.log_softmax(
-                student_logits / self.temperature, dim=-1
-            )
-            loss = F.kl_div(
-                student_log_probs,
-                soft_targets,
-                reduction="batchmean",
-            ) * (self.temperature ** 2)
-
+            # 3. Train the student on the synthetic batch
             student_optimizer.zero_grad()
+            student_logits = student(inputs)
+            loss = self._distillation_loss(student_logits, teacher_logits)
             loss.backward()
             student_optimizer.step()
 
-        student.eval()
         metadata = {
             "technique": "zero_shot_distillation",
             "config": {
@@ -163,82 +144,66 @@ class ZeroShotDistiller(BaseCompressor):
                 "distillation_lr": self.distillation_lr,
                 "batch_size": self.batch_size,
                 "temperature": self.temperature,
-                "input_shape": list(self.input_shape),
-                "device": self.device,
             },
         }
-        return student, metadata
+        return student.cpu(), metadata
 
     # ------------------------------------------------------------------
-    # Private helpers
+    # Helper methods
     # ------------------------------------------------------------------
 
-    def _synthesise_inputs(self, teacher: nn.Module) -> torch.Tensor:
-        """Generate a batch of pseudo-inputs that maximise teacher BN alignment.
+    def _collect_bn_stats(self, teacher: nn.Module) -> list[dict]:
+        """Extract running mean and variance from all BN layers."""
+        bn_stats = []
+        for module in teacher.modules():
+            if isinstance(module, nn.BatchNorm2d):
+                bn_stats.append({
+                    "mean": module.running_mean,
+                    "var": module.running_var,
+                })
+        return bn_stats
 
-        The inputs are initialised from a standard normal distribution and
-        iteratively updated via gradient ascent to minimise the discrepancy
-        between their running statistics and the teacher's stored BN mean /
-        variance.
-        """
-        pseudo = torch.randn(
-            self.batch_size, *self.input_shape,
+    def _synthesize_inputs(self, teacher: nn.Module, bn_stats: list[dict]) -> torch.Tensor:
+        """Generate a batch of pseudo-inputs via gradient-based optimization."""
+        inputs = torch.randn(
+            (self.batch_size, *self.input_shape),
             device=self.device,
             requires_grad=True,
         )
-        optimizer = torch.optim.Adam([pseudo], lr=self.synthesis_lr)
+        input_optimizer = torch.optim.Adam([inputs], lr=self.synthesis_lr)
 
         for _ in range(self.num_synthesis_steps):
-            optimizer.zero_grad()
-            teacher(pseudo)  # side-effect: BN hooks fire
-            loss = self._bn_alignment_loss(teacher, pseudo)
+            input_optimizer.zero_grad()
+            
+            # The loss is the sum of distances between current BN stats and target stats
+            loss = 0
+            # We need to register hooks to get intermediate activations
+            hooks = []
+            bn_outputs = []
+            def hook_fn(module, input, output):
+                bn_outputs.append(output)
+
+            for module in teacher.modules():
+                if isinstance(module, nn.BatchNorm2d):
+                    hooks.append(module.register_forward_hook(hook_fn))
+            
+            teacher(inputs) # Forward pass to populate hooks
+
+            for i, bn_output in enumerate(bn_outputs):
+                mean = bn_output.mean(dim=[0, 2, 3])
+                var = bn_output.var(dim=[0, 2, 3], unbiased=False)
+                loss += F.mse_loss(mean, bn_stats[i]["mean"]) + F.mse_loss(var, bn_stats[i]["var"])
+
+            for hook in hooks:
+                hook.remove()
+
             loss.backward()
-            optimizer.step()
+            input_optimizer.step()
 
-        return pseudo.detach()
+        return inputs.detach()
 
-    @staticmethod
-    def _bn_alignment_loss(
-        teacher: nn.Module, inputs: torch.Tensor
-    ) -> torch.Tensor:
-        """Compute a loss that encourages *inputs* to match BN statistics.
-
-        For each BatchNorm layer we measure the discrepancy between:
-        - the running mean/var stored in the teacher, and
-        - the empirical mean/var of the current mini-batch activations.
-        """
-        losses: list[torch.Tensor] = []
-
-        def _hook(module: nn.Module, _inp, output: torch.Tensor) -> None:
-            if not isinstance(module, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)):
-                return
-            # Compute mean and variance over all dimensions except the channel dim.
-            channel_dim = 1
-            reduce_dims = tuple(d for d in range(output.dim()) if d != channel_dim)
-            batch_mean = output.mean(dim=reduce_dims)
-            batch_var = output.var(dim=reduce_dims, unbiased=False)
-            # BN running statistics.
-            running_mean = module.running_mean.detach()  # type: ignore[attr-defined]
-            running_var = module.running_var.detach()  # type: ignore[attr-defined]
-            losses.append(
-                (batch_mean - running_mean).pow(2).mean()
-                + (batch_var - running_var).pow(2).mean()
-            )
-
-        handles = [
-            m.register_forward_hook(_hook)
-            for m in teacher.modules()
-            if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d))
-        ]
-        try:
-            teacher(inputs)
-        finally:
-            for h in handles:
-                h.remove()
-
-        if losses:
-            return torch.stack(losses).sum()
-        # Fallback when no BN layers: minimise negative mean activation.
-        with torch.enable_grad():
-            out = teacher(inputs)
-        return -out.mean()
+    def _distillation_loss(self, student_logits: torch.Tensor, teacher_logits: torch.Tensor) -> torch.Tensor:
+        """Compute KL-divergence between soft student and teacher predictions."""
+        soft_teacher = F.log_softmax(teacher_logits / self.temperature, dim=1)
+        soft_student = F.log_softmax(student_logits / self.temperature, dim=1)
+        return F.kl_div(soft_student, soft_teacher, log_target=True, reduction='batchmean') * (self.temperature ** 2)

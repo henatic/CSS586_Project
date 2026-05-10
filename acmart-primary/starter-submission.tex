@@ -1,0 +1,50 @@
+% Submission-ready anonymized ACM template
+% Use the `anonymous` and `review` options for blinded review.
+% For final camera-ready, remove `anonymous` and `review` and fill in metadata.
+\documentclass[manuscript,review,anonymous]{acmart}
+
+% If your conference/journal gives a submission ID, put it here (optional)
+% \acmSubmissionID{123-A56-BU3}
+
+% Do NOT add author metadata here when anonymizing.
+% Remove acknowledgments and any self-identifying information.
+% For references to your own prior work, either redact identifying parts
+% or phrase them in the third person as required by the venue.
+
+\begin{document}
+\title{A Minimal Anonymized Submission Using the acmart Class}
+
+\begin{abstract}
+This document is a minimal anonymized submission template using the
+`acmart` class. It demonstrates the `manuscript,review,anonymous` options
+and suggests practices for anonymized submissions.
+\end{abstract}
+
+% No \maketitle author block for anonymous submissions; \maketitle prints
+% the title and abstract only when no authors are provided.
+\maketitle
+
+\section{Introduction}
+This is a short introduction. For submissions, make sure to remove
+self-identifying material (institutional names, grant numbers, author
+names in acknowledgements, etc.).
+
+\section{Related Work}
+Cite relevant work as usual \cite{DBLP:books/mk/GrayR99}. If you must
+cite your own prior work, follow the venue's anonymization policy: some
+venues allow citing your work in third person ("Prior work by the
+authors [XX]") while others require redaction.
+
+\section{Submission checklist notes}
+- No author names or affiliations are present.
+- Remove Acknowledgements before submission.
+- Avoid uploading supplementary material containing identifying metadata.
+
+\section{Conclusion}
+Short conclusion.
+
+% Bibliography: point to a sample .bib in the repository
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{samples/sample-base}
+
+\end{document}

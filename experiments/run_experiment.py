@@ -98,86 +98,69 @@ PIPELINE_CONFIGS: list[tuple[str, list]] = [
     ),
     (
         "Structured Prune → Magnitude Prune → Quantize",
-        [StructuredPruner(sparsity=0.2), MagnitudePruner(sparsity=0.4), DynamicQuantizer()],
+        [
+            StructuredPruner(sparsity=0.25),
+            MagnitudePruner(sparsity=0.5),
+            DynamicQuantizer(),
+        ],
     ),
 ]
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Main experiment loop
 # ---------------------------------------------------------------------------
 
-def run_experiments() -> None:
-    torch.manual_seed(42)
-    original_model = BenchmarkMLP()
 
-    print("\n" + "=" * 72)
-    print(" Zero-Shot Model Compression Pipeline Comparison")
-    print("=" * 72)
+def main() -> None:
+    """Run all pipeline configurations and print a summary."""
+    print("=" * 80)
+    print("Running Compression Pipeline Comparison")
+    print("=" * 80)
 
+    # We use a new model for each pipeline to ensure a fair comparison
     results = []
-
     for name, stages in PIPELINE_CONFIGS:
-        if not stages:
-            # Baseline – no compression.
-            model = original_model
-            size = model_size_mb(model)
-            params = count_parameters(model)
-            sparsity = compute_sparsity(model)["global_sparsity"]
-            latency = _latency_fn(model)
-            results.append(
-                {
-                    "name": name,
-                    "size_mb": size,
-                    "total_params": params["total"],
-                    "sparsity": sparsity,
-                    "mean_ms": latency["mean_ms"],
-                    "std_ms": latency["std_ms"],
-                    "duration_s": 0.0,
-                }
-            )
-        else:
-            pipeline = CompressionPipeline(
-                stages=stages,
-                eval_fns={
-                    "size_mb": model_size_mb,
-                    "params": count_parameters,
-                    "sparsity": compute_sparsity,
-                },
-            )
-            compressed, report = pipeline.run(original_model)
-            after = report["stages"][-1]["metrics_after"]
-            latency = _latency_fn(compressed)
-            results.append(
-                {
-                    "name": name,
-                    "size_mb": after["size_mb"],
-                    "total_params": after["params"]["total"],
-                    "sparsity": after["sparsity"]["global_sparsity"],
-                    "mean_ms": latency["mean_ms"],
-                    "std_ms": latency["std_ms"],
-                    "duration_s": report["total_duration_s"],
-                }
-            )
+        print(f"\nRunning pipeline: {name}...")
+        model = BenchmarkMLP()
+        eval_fns = {**EVAL_FNS, "latency": _latency_fn}
 
-    # Print results table.
-    col_w = 44
-    header = (
-        f"{'Configuration':<{col_w}}  {'Size(MB)':>9}  {'Sparsity':>9}"
-        f"  {'Latency(ms)':>11}  {'Compress(s)':>11}"
+        if not stages:
+            # Baseline case
+            baseline_metrics = {name: fn(model) for name, fn in eval_fns.items()}
+            results.append((name, baseline_metrics))
+            continue
+
+        pipeline = CompressionPipeline(stages=stages, eval_fns=eval_fns)
+        _, report = pipeline.run(model)
+
+        # For the final report, we care about the metrics *after* the last stage
+        final_metrics = report["stages"][-1]["metrics_after"]
+        results.append((name, final_metrics))
+
+    _print_summary_table(results)
+
+
+def _print_summary_table(results: list[tuple[str, dict]]) -> None:
+    """Print a formatted table of results."""
+    # Header
+    print("\n" + "=" * 80)
+    print("Summary of Results")
+    print("-" * 80)
+    print(
+        f"{'Pipeline':<45} | {'Size (MB)':>10} | {'Sparsity (%)':>12} | {'Latency (ms)':>15}"
     )
-    print(header)
-    print("-" * len(header))
-    for r in results:
-        print(
-            f"{r['name']:<{col_w}}  {r['size_mb']:>9.3f}"
-            f"  {r['sparsity']:>9.2%}"
-            f"  {r['mean_ms']:>8.2f}±{r['std_ms']:.2f}"
-            f"  {r['duration_s']:>11.3f}"
-        )
-    print("=" * len(header))
-    print()
+    print("-" * 80)
+
+    # Rows
+    for name, metrics in results:
+        size = metrics["size_mb"]
+        sparsity = metrics["sparsity"] * 100
+        latency = metrics["latency"]["mean_ms"]
+        print(f"{name:<45} | {size:>10.2f} | {sparsity:>11.2f} % | {latency:>14.2f} ms")
+
+    print("=" * 80)
 
 
 if __name__ == "__main__":
-    run_experiments()
+    main()
