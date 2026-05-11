@@ -85,19 +85,23 @@ PIPELINE_CONFIGS: list[tuple[str, list]] = [
         [DynamicQuantizer()],
     ),
     (
-        "Magnitude Pruning (50 %) only",
+        "Magnitude Pruning (50%) only",
         [MagnitudePruner(sparsity=0.5)],
     ),
     (
-        "Prune → Quantize",
+        "Structured Pruning (30%) only",
+        [StructuredPruner(sparsity=0.3)],
+    ),
+    (
+        "Prune -> Quantize",
         [MagnitudePruner(sparsity=0.5), DynamicQuantizer()],
     ),
     (
-        "Quantize → Prune",
+        "Quantize -> Prune",
         [DynamicQuantizer(), MagnitudePruner(sparsity=0.5)],
     ),
     (
-        "Structured Prune → Magnitude Prune → Quantize",
+        "Structured Prune -> Magnitude Prune -> Quantize",
         [
             StructuredPruner(sparsity=0.25),
             MagnitudePruner(sparsity=0.5),
@@ -113,53 +117,61 @@ PIPELINE_CONFIGS: list[tuple[str, list]] = [
 
 
 def main() -> None:
-    """Run all pipeline configurations and print a summary."""
-    print("=" * 80)
-    print("Running Compression Pipeline Comparison")
-    print("=" * 80)
+    """Run all pipeline configurations and write a summary to a file."""
+    output_path = "results/experiment_results.txt"
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    # We use a new model for each pipeline to ensure a fair comparison
-    results = []
-    for name, stages in PIPELINE_CONFIGS:
-        print(f"\nRunning pipeline: {name}...")
-        model = BenchmarkMLP()
-        eval_fns = {**EVAL_FNS, "latency": _latency_fn}
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("=" * 80 + "\n")
+        f.write("Running Compression Pipeline Comparison\n")
+        f.write("=" * 80 + "\n")
 
-        if not stages:
-            # Baseline case
-            baseline_metrics = {name: fn(model) for name, fn in eval_fns.items()}
-            results.append((name, baseline_metrics))
-            continue
+        # We use a new model for each pipeline to ensure a fair comparison
+        results = []
+        for name, stages in PIPELINE_CONFIGS:
+            print(f"Running pipeline: {name}...")  # Keep console output for progress
+            model = BenchmarkMLP()
+            eval_fns = {**EVAL_FNS, "latency": _latency_fn}
 
-        pipeline = CompressionPipeline(stages=stages, eval_fns=eval_fns)
-        _, report = pipeline.run(model)
+            if not stages:
+                # Baseline case
+                baseline_metrics = {
+                    name: fn(model) for name, fn in eval_fns.items()
+                }
+                results.append((name, baseline_metrics))
+                continue
 
-        # For the final report, we care about the metrics *after* the last stage
-        final_metrics = report["stages"][-1]["metrics_after"]
-        results.append((name, final_metrics))
+            pipeline = CompressionPipeline(stages=stages, eval_fns=eval_fns)
+            _, report = pipeline.run(model)
 
-    _print_summary_table(results)
+            # For the final report, we care about the metrics *after* the last stage
+            final_metrics = report["stages"][-1]["metrics_after"]
+            results.append((name, final_metrics))
+
+        _write_summary_table(results, f)
 
 
-def _print_summary_table(results: list[tuple[str, dict]]) -> None:
-    """Print a formatted table of results."""
+def _write_summary_table(results: list[tuple[str, dict]], f) -> None:
+    """Write a formatted table of results to the file object f."""
     # Header
-    print("\n" + "=" * 80)
-    print("Summary of Results")
-    print("-" * 80)
-    print(
-        f"{'Pipeline':<45} | {'Size (MB)':>10} | {'Sparsity (%)':>12} | {'Latency (ms)':>15}"
+    f.write("\n" + "=" * 80 + "\n")
+    f.write("Summary of Results\n")
+    f.write("-" * 80 + "\n")
+    f.write(
+        f"{'Pipeline':<45} | {'Size (MB)':>10} | {'Sparsity (%)':>12} | {'Latency (ms)':>15}\n"
     )
-    print("-" * 80)
+    f.write("-" * 80 + "\n")
 
     # Rows
     for name, metrics in results:
         size = metrics["size_mb"]
         sparsity = metrics["sparsity"] * 100
         latency = metrics["latency"]["mean_ms"]
-        print(f"{name:<45} | {size:>10.2f} | {sparsity:>11.2f} % | {latency:>14.2f} ms")
+        f.write(
+            f"{name:<45} | {size:>10.2f} | {sparsity:>11.2f} % | {latency:>14.2f} ms\n"
+        )
 
-    print("=" * 80)
+    f.write("=" * 80 + "\n")
 
 
 if __name__ == "__main__":

@@ -172,33 +172,35 @@ class ZeroShotDistiller(BaseCompressor):
         )
         input_optimizer = torch.optim.Adam([inputs], lr=self.synthesis_lr)
 
+        # This is a list of hooks to be populated
+        bn_outputs = []
+        hooks = []
+
+        def hook_fn(module, input, output):
+            bn_outputs.append(output)
+
+        for module in teacher.modules():
+            if isinstance(module, nn.BatchNorm2d):
+                hooks.append(module.register_forward_hook(hook_fn))
+
         for _ in range(self.num_synthesis_steps):
             input_optimizer.zero_grad()
+            bn_outputs.clear()
             
+            teacher(inputs)  # Forward pass to populate hooks via hook_fn
+
             # The loss is the sum of distances between current BN stats and target stats
             loss = 0
-            # We need to register hooks to get intermediate activations
-            hooks = []
-            bn_outputs = []
-            def hook_fn(module, input, output):
-                bn_outputs.append(output)
-
-            for module in teacher.modules():
-                if isinstance(module, nn.BatchNorm2d):
-                    hooks.append(module.register_forward_hook(hook_fn))
-            
-            teacher(inputs) # Forward pass to populate hooks
-
             for i, bn_output in enumerate(bn_outputs):
                 mean = bn_output.mean(dim=[0, 2, 3])
                 var = bn_output.var(dim=[0, 2, 3], unbiased=False)
                 loss += F.mse_loss(mean, bn_stats[i]["mean"]) + F.mse_loss(var, bn_stats[i]["var"])
 
-            for hook in hooks:
-                hook.remove()
-
             loss.backward()
             input_optimizer.step()
+
+        for hook in hooks:
+            hook.remove()
 
         return inputs.detach()
 

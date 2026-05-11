@@ -93,17 +93,48 @@ class StructuredPruner(BaseCompressor):
         Fraction of channels / neurons to remove, in [0, 1).
     layer_types:
         Layer types to prune.  Defaults to ``(nn.Linear, nn.Conv2d)``.
+    make_permanent:
+        If ``True`` the pruning mask is applied permanently (the mask buffer
+        is removed).  Defaults to ``True``.
     """
 
     def __init__(
         self,
         sparsity: float = 0.2,
         layer_types: tuple[type[nn.Module], ...] = (nn.Linear, nn.Conv2d),
+        make_permanent: bool = True,
     ) -> None:
         if not 0.0 <= sparsity < 1.0:
             raise ValueError(f"sparsity must be in [0, 1); got {sparsity}")
         self.sparsity = sparsity
         self.layer_types = layer_types
+        self.make_permanent = make_permanent
+
+    def compress(self, model: nn.Module) -> tuple[nn.Module, dict]:
+        """Prune *model* and return (pruned_model, metadata)."""
+        model_copy = self._copy_model(model)
+
+        for module in model_copy.modules():
+            if isinstance(module, self.layer_types):
+                prune.ln_structured(
+                    module,
+                    name="weight",
+                    amount=self.sparsity,
+                    n=2,  # L2 norm
+                    dim=0,  # Prune output channels/neurons
+                )
+                if self.make_permanent:
+                    prune.remove(module, "weight")
+
+        metadata = {
+            "technique": "structured_pruning",
+            "config": {
+                "sparsity": self.sparsity,
+                "layer_types": [t.__name__ for t in self.layer_types],
+                "make_permanent": self.make_permanent,
+            },
+        }
+        return model_copy, metadata
 
     def compress(self, model: nn.Module) -> tuple[nn.Module, dict]:
         """Prune *model* with structured L2-norm pruning."""

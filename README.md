@@ -2,7 +2,7 @@
 
 **CSS 586: Deep Learning**
 
-The goal of this project is to identify the best *combination and ordering* of
+The goal of this project is to identify the best _combination and ordering_ of
 model-compression techniques that maximise inference efficiency while
 requiring **zero (or near-zero) training data**.
 
@@ -11,13 +11,14 @@ requiring **zero (or near-zero) training data**.
 ## Problem Statement
 
 Modern deep-learning models are large and slow to deploy on edge hardware.
-*Model compression* (quantization, pruning, knowledge distillation, …) can
+_Model compression_ (quantization, pruning, knowledge distillation, …) can
 shrink these models dramatically, but each technique makes different
 trade-offs and their interactions are not well understood.
 
 This project systematically explores:
+
 1. Which individual techniques give the largest size / latency reduction.
-2. How different *orderings* of techniques in a pipeline affect the
+2. How different _orderings_ of techniques in a pipeline affect the
    final compressed model.
 3. Whether a zero-shot (no-training-data) pipeline can match or approach
    the quality of fine-tuning-based compression.
@@ -26,17 +27,17 @@ This project systematically explores:
 
 ## Requirements
 
-| Dependency | Version | Purpose |
-|---|---|---|
-| `torch` | ≥ 2.0.0 | Core deep learning framework |
-| `torchvision` | ≥ 0.15.0 | Pre-trained model zoo |
+| Dependency     | Version  | Purpose                        |
+| -------------- | -------- | ------------------------------ |
+| `torch`        | ≥ 2.0.0  | Core deep learning framework   |
+| `torchvision`  | ≥ 0.15.0 | Pre-trained model zoo          |
 | `transformers` | ≥ 4.30.0 | HuggingFace transformer models |
-| `numpy` | ≥ 1.24.0 | Numerical utilities |
-| `scipy` | ≥ 1.10.0 | Statistical analysis |
-| `tqdm` | ≥ 4.65.0 | Progress bars |
-| `pytest` | ≥ 7.3.0 | Unit testing |
-| `pytest-cov` | ≥ 4.1.0 | Test coverage |
-| `flake8` | ≥ 6.0.0 | Linting |
+| `numpy`        | ≥ 1.24.0 | Numerical utilities            |
+| `scipy`        | ≥ 1.10.0 | Statistical analysis           |
+| `tqdm`         | ≥ 4.65.0 | Progress bars                  |
+| `pytest`       | ≥ 7.3.0  | Unit testing                   |
+| `pytest-cov`   | ≥ 4.1.0  | Test coverage                  |
+| `flake8`       | ≥ 6.0.0  | Linting                        |
 
 Install all dependencies:
 
@@ -81,19 +82,19 @@ CSS586_Project/
 
 Reduces weight precision from FP32 to INT8 without any gradient updates.
 
-| Class | Data needed | Notes |
-|---|---|---|
-| `DynamicQuantizer` | None (zero-shot) | Weights quantized at save-time; activations at run-time |
-| `StaticQuantizer` | Small calibration set (no labels) | Both weights and activations quantized |
+| Class              | Data needed                       | Notes                                                   |
+| ------------------ | --------------------------------- | ------------------------------------------------------- |
+| `DynamicQuantizer` | None (zero-shot)                  | Weights quantized at save-time; activations at run-time |
+| `StaticQuantizer`  | Small calibration set (no labels) | Both weights and activations quantized                  |
 
 ### 2 · Weight Pruning (`compression/pruning.py`)
 
 Zeros out weights whose contribution is lowest; zero-shot.
 
-| Class | Strategy | Notes |
-|---|---|---|
-| `MagnitudePruner` | Unstructured L1 | Global magnitude threshold across all targeted layers |
-| `StructuredPruner` | Structured L2 | Removes entire output channels / neurons |
+| Class              | Strategy        | Notes                                                 |
+| ------------------ | --------------- | ----------------------------------------------------- |
+| `MagnitudePruner`  | Unstructured L1 | Global magnitude threshold across all targeted layers |
+| `StructuredPruner` | Structured L2   | Removes entire output channels / neurons              |
 
 ### 3 · Zero-Shot Knowledge Distillation (`compression/distillation.py`)
 
@@ -157,6 +158,29 @@ pytest tests/ -v
 
 ---
 
+## Development Status
+
+- [x] **Core Infrastructure**
+  - [x] Abstract `BaseCompressor` interface.
+  - [x] `CompressionPipeline` for chaining techniques.
+  - [x] Evaluation metrics for size, sparsity, and latency.
+- [x] **Compression Techniques Implemented**
+  - [x] `DynamicQuantizer` (post-training dynamic quantization).
+  - [x] `StaticQuantizer` (post-training static quantization).
+  - [x] `MagnitudePruner` (unstructured weight pruning).
+  - [x] `StructuredPruner` (structured weight pruning).
+  - [x] `ZeroShotDistiller` (data-free knowledge distillation).
+- [x] **Initial Experiments**
+  - [x] `run_experiment.py` script to compare pipeline orderings.
+  - [x] Successfully ran comparisons for pruning and dynamic quantization.
+- [ ] **Pending Tasks**
+  - [ ] Write comprehensive unit tests for all compression techniques in `tests/`.
+  - [ ] Expand `run_experiment.py` to include `StaticQuantizer` and `ZeroShotDistiller`.
+  - [ ] Apply the compression pipeline to a real-world pre-trained model (e.g., from `torchvision` or `transformers`).
+  - [ ] Analyze the impact of compression on a downstream task's accuracy (requires a validation dataset).
+
+---
+
 ## Development Plan
 
 - [x] Define requirements and project structure
@@ -180,4 +204,3 @@ pytest tests/ -v
 ## License
 
 MIT – see [LICENSE](LICENSE).
-
