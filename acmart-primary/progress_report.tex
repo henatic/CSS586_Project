@@ -10,15 +10,12 @@
 }
 
 \title{Optimizing Zero-Shot Model Compression Pipelines: A Progress Report}
-\author{GitHub Copilot}
+\author{Henry Morgan}
 \affiliation{%
   \institution{University of Washington Bothell}
-  \streetaddress{18115 Campus Way NE}
-  \city{Bothell}
-  \state{WA}
-  \postcode{98011}
+  \country{USA}
 }
-\email{copilot@example.com}
+\email{hdmorgan@uw.edu}
 
 \begin{abstract}
 Modern deep learning models are often too large and computationally expensive for deployment on resource-constrained edge devices. Model compression techniques such as quantization, pruning, and knowledge distillation are essential for optimizing these models. This project systematically explores the effects of combining these techniques in a zero-shot (data-free) setting. We have implemented a flexible pipeline that allows for the sequential application of various compression methods and evaluates their impact on model size, sparsity, and latency. This report details the progress made in implementing these compression techniques, the pipeline infrastructure, and initial experimental results. We also outline the plan for the final paper, which will involve more extensive experiments and analysis.
@@ -35,20 +32,20 @@ Our primary goal is to understand the interactions between different compression
 \section{Project Progress}
 
 \subsection{System Design and Implementation}
-We have designed and implemented a `CompressionPipeline` that orchestrates the application of multiple compression techniques. The core components of our system are:
+We have designed and implemented a \texttt{CompressionPipeline} that orchestrates the application of multiple compression techniques. The core components of our system are:
 
 \begin{itemize}
-    \item \textbf{BaseCompressor Interface:} An abstract base class that defines a common interface for all compression techniques. Each compressor implements a `compress` method that takes a model and returns a compressed model along with metadata.
+    \item \textbf{BaseCompressor Interface:} An abstract base class that defines a common interface for all compression techniques. Each compressor implements a \texttt{compress} method that takes a model and returns a compressed model along with metadata.
     \item \textbf{Compression Techniques:} We have implemented the following zero-shot compression techniques:
     \begin{itemize}
-        \item \textbf{Quantization:} `DynamicQuantizer` and `StaticQuantizer` to reduce model precision to INT8.
-        \item \textbf{Pruning:} `MagnitudePruner` for unstructured pruning and `StructuredPruner` for structured pruning of weights.
-        \item \textbf{Knowledge Distillation:} `ZeroShotDistiller` that synthesizes pseudo-inputs from the teacher model's batch normalization statistics.
+        \item \textbf{Quantization:} \texttt{DynamicQuantizer} and \texttt{StaticQuantizer} to reduce model precision to INT8.
+        \item \textbf{Pruning:} \texttt{MagnitudePruner} for unstructured pruning and \texttt{StructuredPruner} for structured pruning of weights.
+        \item \textbf{Knowledge Distillation:} \texttt{ZeroShotDistiller} that synthesizes pseudo-inputs from the teacher model's batch normalization statistics.
     \end{itemize}
-    \item \textbf{Evaluation Metrics:} A suite of functions to evaluate model size (`model_size_mb`), sparsity (`compute_sparsity`), and inference latency (`measure_latency`).
+
 \end{itemize}
 
-The overall workflow is managed by the `run_experiment.py` script, which defines and executes different pipeline configurations, collects metrics, and presents a comparative summary.
+The overall workflow is managed by the \texttt{run\_experiment.py} script, which defines and executes different pipeline configurations, collects metrics, and presents a comparative summary.
 
 \subsection{Initial Experiments and Results}
 We conducted an initial set of experiments to compare different orderings of dynamic quantization and magnitude pruning. The results are summarized in Table~\ref{tab:results}. The key trade-offs between model size and inference latency are visualized in Figure~\ref{fig:size} and Figure~\ref{fig:latency}.
@@ -88,7 +85,7 @@ We conducted an initial set of experiments to compare different orderings of dyn
 From these initial results, we observe that quantization is highly effective at reducing model size, but it can introduce latency overhead. Pruning, especially structured pruning, shows promise in reducing model complexity without significantly impacting latency in this zero-shot setting. The combination and ordering of these techniques lead to interesting trade-offs that warrant further investigation.
 
 \subsection{Unit Testing}
-We have implemented a comprehensive suite of unit tests using `pytest` to ensure the correctness of our compression components and evaluation metrics. All 20 tests are currently passing, confirming the reliability of our implementation.
+We have implemented a comprehensive suite of unit tests using \texttt{pytest} to ensure the correctness of our compression components and evaluation metrics. All 20 tests are currently passing, confirming the reliability of our implementation.
 
 \begin{lstlisting}
 ============================= test session starts ==============================
@@ -100,15 +97,19 @@ We have implemented a comprehensive suite of unit tests using `pytest` to ensure
 Our plan for the final paper includes the following steps:
 
 \begin{enumerate}
-    \item \textbf{Literature Review:} Conduct a thorough review of existing literature on model compression and pipeline optimization to contextualize our work. We have already begun incorporating insights from several key papers.
+    \item \textbf{Literature Review:} Conduct a thorough review of existing literature on model compression and pipeline optimization. Recent work has shown the effectiveness of combining Neural Architecture Search (NAS) with Knowledge Distillation (KD) to automatically discover optimal student architectures that balance performance and efficiency. This ``KD-NAS'' approach, as detailed by Trivedi et al. (2023) \cite{trivedi2023neural}, moves beyond manually selecting student models and instead searches a predefined space of architectures to find one best suited for distillation from a given teacher. This is a promising direction for automating and improving the compression process. Vilar Dantas et al. (2024) \cite{vilar2024comprehensive} provide a comprehensive review of model compression techniques, which will serve as a foundational reference for our work.
     \item \textbf{Expand Experiments:}
     \begin{itemize}
-        \item Incorporate `StaticQuantizer` and `ZeroShotDistiller` into the experimental pipeline.
-        \item Apply the compression pipelines to a pre-trained model from `torchvision` (e.g., ResNet-18) to evaluate performance on a real-world task.
+        \item Incorporate \texttt{StaticQuantizer} and \texttt{ZeroShotDistiller} into the experimental pipeline.
+        \item Apply the compression pipelines to a pre-trained model from \texttt{torchvision} (e.g., ResNet-18) to evaluate performance on a real-world task.
         \item Measure the impact on model accuracy on a validation dataset (e.g., CIFAR-10).
     \end{itemize}
     \item \textbf{Analyze and Visualize Results:} Create plots and tables to clearly present the trade-offs between model size, latency, and accuracy for different compression strategies.
+    \item \textbf{Future Work -- NAS Integration:} As an extension, we will explore integrating a NAS component into our pipeline. This would involve defining a search space of possible student architectures and using a search strategy (e.g., reinforcement learning) to find an optimal student for our \texttt{ZeroShotDistiller}, automating a key part of the pipeline design, as inspired by the work of Merler et al. (2025) \cite{merler2025neural}.
     \item \textbf{Write Final Paper:} Structure the final paper with a comprehensive literature review, detailed methodology, thorough experimental results, and a concluding discussion on the findings.
 \end{enumerate}
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
 
 \end{document}
