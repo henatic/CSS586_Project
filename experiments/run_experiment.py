@@ -17,9 +17,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import torch
 import torch.nn as nn
+import torch.utils.data as data
 
 from compression.pruning import MagnitudePruner, StructuredPruner
-from compression.quantization import DynamicQuantizer
+from compression.quantization import DynamicQuantizer, StaticQuantizer
+from compression.distillation import ZeroShotDistiller
 from pipeline.pipeline import CompressionPipeline
 from evaluation.metrics import (
     count_parameters,
@@ -75,6 +77,16 @@ def _latency_fn(model: nn.Module) -> dict[str, float]:
 # Pipeline configurations to compare
 # ---------------------------------------------------------------------------
 
+def _get_calibration_loader(
+    num_samples: int = 16, batch_size: int = 4, in_features: int = 128
+) -> torch.utils.data.DataLoader:
+    """Creates a dummy DataLoader for static quantization calibration."""
+    data = torch.randn(num_samples, in_features)
+    dataset = torch.utils.data.TensorDataset(data)
+    return torch.utils.data.DataLoader(dataset, batch_size=batch_size)
+
+calibration_loader = _get_calibration_loader()
+
 PIPELINE_CONFIGS: list[tuple[str, list]] = [
     (
         "Baseline (no compression)",
@@ -108,6 +120,22 @@ PIPELINE_CONFIGS: list[tuple[str, list]] = [
             DynamicQuantizer(),
         ],
     ),
+    (
+        "Static Quantization",
+        [StaticQuantizer(calibration_loader=calibration_loader)],
+    ),
+    (
+        "Distill -> Prune -> Static Quantize",
+        [
+            ZeroShotDistiller(
+                student=BenchmarkMLP(),
+                input_shape=(1, 128),
+                num_distillation_steps=200,  # Reduce for a quick test
+            ),
+            MagnitudePruner(sparsity=0.5),
+            StaticQuantizer(calibration_loader=calibration_loader),
+        ],
+    ),
 ]
 
 
@@ -121,34 +149,36 @@ def main() -> None:
     output_path = "results/experiment_results.txt"
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write("=" * 80 + "\n")
-        f.write("Running Compression Pipeline Comparison\n")
-        f.write("=" * 80 + "\n")
+    results = []
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("=" * 80 + "\n")
+            f.write("Running Compression Pipeline Comparison\n")
+            f.write("=" * 80 + "\n")
 
-        # We use a new model for each pipeline to ensure a fair comparison
-        results = []
-        for name, stages in PIPELINE_CONFIGS:
-            print(f"Running pipeline: {name}...")  # Keep console output for progress
-            model = BenchmarkMLP()
-            eval_fns = {**EVAL_FNS, "latency": _latency_fn}
+            # We use a new model for each pipeline to ensure a fair comparison
+            for name, stages in PIPELINE_CONFIGS:
+                print(f"Running pipeline: {name}...")  # Keep console output for progress
+                model = BenchmarkMLP()
+                eval_fns = {**EVAL_FNS, "latency": _latency_fn}
 
-            if not stages:
-                # Baseline case
-                baseline_metrics = {
-                    name: fn(model) for name, fn in eval_fns.items()
-                }
-                results.append((name, baseline_metrics))
-                continue
+                if not stages:
+                    # Baseline case
+                    baseline_metrics = {
+                        name: fn(model) for name, fn in eval_fns.items()
+                    }
+                    results.append((name, baseline_metrics))
+                    continue
 
-            pipeline = CompressionPipeline(stages=stages, eval_fns=eval_fns)
-            _, report = pipeline.run(model)
+                pipeline = CompressionPipeline(stages=stages, eval_fns=eval_fns)
+                _, report = pipeline.run(model)
 
-            # For the final report, we care about the metrics *after* the last stage
-            final_metrics = report["stages"][-1]["metrics_after"]
-            results.append((name, final_metrics))
-
-        _write_summary_table(results, f)
+                # For the final report, we care about the metrics *after* the last stage
+                final_metrics = report["stages"][-1]["metrics_after"]
+                results.append((name, final_metrics))
+    finally:
+        with open(output_path, "a", encoding="utf-8") as f:
+            _write_summary_table(results, f)
 
 
 def _write_summary_table(results: list[tuple[str, dict]], f) -> None:

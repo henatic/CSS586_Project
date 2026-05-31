@@ -88,30 +88,46 @@ class StaticQuantizer(BaseCompressor):
         calibration_loader,
         backend: str = "fbgemm",
         num_calibration_batches: int = 32,
+        modules_to_fuse: list[list[str]] | None = None,
     ) -> None:
         self.calibration_loader = calibration_loader
         self.backend = backend
         self.num_calibration_batches = num_calibration_batches
+        self.modules_to_fuse = modules_to_fuse
 
     def compress(self, model: nn.Module) -> tuple[nn.Module, dict]:
         """Calibrate and statically quantize *model*."""
         model_copy = self._copy_model(model)
         model_copy.eval()
 
-        # Fuse modules for better quantization performance
-        torch.quantization.fuse_modules(
-            model_copy, [["conv", "relu"]], inplace=True
-        )
+        supported_engines = torch.backends.quantized.supported_engines
+        if not supported_engines or all(engine == "onednn" for engine in supported_engines):
+            raise RuntimeError(
+                "Static quantization requires a quantized CPU backend (fbgemm/qnnpack), "
+                f"but supported_engines={supported_engines}."
+            )
+
+        backend = self.backend
+        if backend not in supported_engines:
+            backend = supported_engines[0]
+
+        # Fuse modules for better quantization performance, if provided
+        if self.modules_to_fuse:
+            torch.quantization.fuse_modules(
+                model_copy, self.modules_to_fuse, inplace=True
+            )
 
         # Set quantization configuration
-        model_copy.qconfig = torch.quantization.get_default_qconfig(self.backend)
+        torch.backends.quantized.engine = backend
+        model_copy.qconfig = torch.quantization.get_default_qconfig(backend)
         torch.quantization.prepare(model_copy, inplace=True)
 
         # Calibrate the model with the provided data loader
         with torch.no_grad():
-            for i, (inputs, _) in enumerate(self.calibration_loader):
+            for i, batch in enumerate(self.calibration_loader):
                 if i >= self.num_calibration_batches:
                     break
+                inputs = batch[0] if isinstance(batch, (list, tuple)) else batch
                 model_copy(inputs)
 
         # Convert the model to a quantized version
@@ -120,7 +136,7 @@ class StaticQuantizer(BaseCompressor):
         metadata = {
             "technique": "static_quantization",
             "config": {
-                "backend": self.backend,
+                "backend": backend,
                 "num_calibration_batches": self.num_calibration_batches,
             },
         }
