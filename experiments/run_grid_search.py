@@ -1,15 +1,17 @@
 """
-Experiment with applying compression pipelines to a pre-trained ResNet-18 model
-on the CIFAR-10 dataset.
+Automated pipeline search using grid search to find the optimal compression
+pipeline for a ResNet-18 model on CIFAR-10.
 
 Run from the repository root:
-    python experiments/run_real_world_experiment.py
+    python experiments/run_grid_search.py
 """
 
 from __future__ import annotations
 
 import sys
 import os
+import itertools
+import csv
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -21,7 +23,6 @@ from torch.utils.data import DataLoader
 
 from compression.pruning import MagnitudePruner, StructuredPruner
 from compression.quantization import DynamicQuantizer, StaticQuantizer
-from compression.distillation import ZeroShotDistiller
 from pipeline.pipeline import CompressionPipeline
 from evaluation.metrics import (
     count_parameters,
@@ -31,7 +32,7 @@ from evaluation.metrics import (
 )
 
 # ---------------------------------------------------------------------------
-# Dataset and Model Loading
+# Dataset and Model Loading (similar to run_real_world_experiment.py)
 # ---------------------------------------------------------------------------
 
 def get_cifar10_loaders(batch_size: int = 128) -> tuple[DataLoader, DataLoader]:
@@ -53,29 +54,22 @@ def get_cifar10_loaders(batch_size: int = 128) -> tuple[DataLoader, DataLoader]:
     return trainloader, testloader
 
 def get_resnet18_model() -> nn.Module:
-    """Get a pre-trained ResNet-18 model."""
+    """Get a pre-trained ResNet-18 model, adjusted for CIFAR-10."""
     model = torchvision.models.resnet18(pretrained=True)
-    # Adjust for CIFAR-10
     model.fc = nn.Linear(model.fc.in_features, 10)
     return model
 
 def get_resnet18_modules_to_fuse() -> list[list[str]]:
     """Return module names to fuse for ResNet-18 static quantization."""
-    modules_to_fuse = [
-        ["conv1", "bn1"],
-    ]
-
+    modules_to_fuse = [["conv1", "bn1"]]
     for layer_idx in range(1, 5):
         layer_name = f"layer{layer_idx}"
         for block_idx in range(2):
             block_prefix = f"{layer_name}.{block_idx}"
             modules_to_fuse.append([f"{block_prefix}.conv1", f"{block_prefix}.bn1"])
             modules_to_fuse.append([f"{block_prefix}.conv2", f"{block_prefix}.bn2"])
-
-        # Fuse downsample path for the first block in layers 2-4
         if layer_idx in (2, 3, 4):
             modules_to_fuse.append([f"{layer_name}.0.downsample.0", f"{layer_name}.0.downsample.1"])
-
     return modules_to_fuse
 
 # ---------------------------------------------------------------------------
@@ -101,16 +95,13 @@ def _latency_fn(model: nn.Module) -> dict[str, float]:
     return measure_latency(model, example, num_warmup=5, num_runs=20)
 
 # ---------------------------------------------------------------------------
-# Main Experiment
+# Grid Search Experiment
 # ---------------------------------------------------------------------------
 
 def main():
-    """Run the real-world experiment."""
-    # Load data and model
+    """Run the grid search experiment."""
     train_loader, test_loader = get_cifar10_loaders()
-    model = get_resnet18_model()
-
-    # Define evaluation functions
+    
     eval_fns = {
         "params": count_parameters,
         "size_mb": model_size_mb,
@@ -119,88 +110,87 @@ def main():
         "latency": _latency_fn,
     }
 
-    resnet_modules_to_fuse = get_resnet18_modules_to_fuse()
+    # Define the search space for compression techniques
+    search_space = {
+        "pruning": [
+            None,
+            MagnitudePruner(sparsity=0.25),
+            MagnitudePruner(sparsity=0.5),
+            StructuredPruner(sparsity=0.25),
+        ],
+        "quantization": [
+            None,
+            DynamicQuantizer(),
+            StaticQuantizer(
+                calibration_loader=train_loader,
+                modules_to_fuse=get_resnet18_modules_to_fuse(),
+            ),
+        ],
+    }
 
-    # Define pipeline configurations
-    pipeline_configs: list[tuple[str, list]] = [
-        ("Baseline (no compression)", []),
-        ("Dynamic Quantization", [DynamicQuantizer()]),
-        (
-            "Static Quantization",
-            [
-                StaticQuantizer(
-                    calibration_loader=train_loader,
-                    modules_to_fuse=resnet_modules_to_fuse,
-                )
-            ],
-        ),
-        ("Magnitude Pruning (50%)", [MagnitudePruner(sparsity=0.5)]),
-        (
-            "Prune -> Static Quantize",
-            [
-                MagnitudePruner(sparsity=0.5),
-                StaticQuantizer(
-                    calibration_loader=train_loader,
-                    modules_to_fuse=resnet_modules_to_fuse,
-                ),
-            ],
-        ),
-    ]
+    # Generate all possible pipeline orderings from the search space
+    components = list(search_space.keys())
+    pipelines = []
+    for r in range(1, len(components) + 1):
+        for p in itertools.permutations(components, r):
+            pipelines.append(p)
 
-    # Run pipelines and collect results
-    results = []
-    for name, stages in pipeline_configs:
-        print(f"Running pipeline: {name}...")
-        # Use a fresh model for each pipeline
-        current_model = get_resnet18_model()
+    # Prepare CSV for results
+    output_path = "results/grid_search_results.csv"
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "Pipeline", "Size (MB)", "Sparsity (%)", "Accuracy", "Latency (ms)"
+        ])
 
-        if not stages:
-            # Baseline case
-            baseline_metrics = {
-                name: fn(current_model) for name, fn in eval_fns.items()
-            }
-            results.append((name, baseline_metrics))
-            continue
+        # Evaluate baseline
+        print("Evaluating Baseline...")
+        baseline_model = get_resnet18_model()
+        baseline_metrics = {name: fn(baseline_model) for name, fn in eval_fns.items()}
+        
+        # The compute_sparsity function returns a dictionary, so we extract the global sparsity value.
+        baseline_sparsity = baseline_metrics['sparsity']
+        if isinstance(baseline_sparsity, dict):
+            baseline_sparsity = baseline_sparsity.get('global_sparsity', 0.0)
 
-        pipeline = CompressionPipeline(stages=stages, eval_fns=eval_fns)
-        try:
-            _, report = pipeline.run(current_model)
-        except RuntimeError as exc:
-            print(f"Skipping pipeline '{name}': {exc}")
-            continue
+        writer.writerow([
+            "Baseline",
+            f"{baseline_metrics['size_mb']:.2f}",
+            f"{baseline_sparsity * 100:.2f}",
+            f"{baseline_metrics['accuracy']:.4f}",
+            f"{baseline_metrics['latency']['mean_ms']:.2f}",
+        ])
 
-        final_metrics = report["stages"][-1]["metrics_after"]
-        results.append((name, final_metrics))
+        # Run grid search
+        for pipeline_keys in pipelines:
+            options = [search_space[key] for key in pipeline_keys]
+            for stages_tuple in itertools.product(*options):
+                stages = [s for s in stages_tuple if s is not None]
+                if not stages:
+                    continue
 
-    # Find a unique output path
-    output_dir = "results"
-    base_filename = "real_world_experiment_results"
-    output_path = os.path.join(output_dir, f"{base_filename}.txt")
-    counter = 1
-    while os.path.exists(output_path):
-        output_path = os.path.join(output_dir, f"{base_filename}{counter}.txt")
-        counter += 1
+                name = " -> ".join(s.__class__.__name__ for s in stages)
+                print(f"Running pipeline: {name}...")
 
-    os.makedirs(output_dir, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write("=" * 80 + "\n")
-        f.write("Real-World Compression Pipeline Comparison (ResNet-18 on CIFAR-10)\n")
-        f.write("-" * 80 + "\n")
-        f.write(
-            f"{'Pipeline':<30} | {'Size (MB)':>10} | {'Sparsity (%)':>12} | {'Accuracy':>10} | {'Latency (ms)':>15}\n"
-        )
-        f.write("-" * 80 + "\n")
-        for name, metrics in results:
-            size = metrics["size_mb"]
-            sparsity = metrics["sparsity"] * 100
-            acc = metrics["accuracy"]
-            latency = metrics["latency"]["mean_ms"]
-            f.write(
-                f"{name:<30} | {size:>10.2f} | {sparsity:>11.2f} % | {acc:>9.4f} | {latency:>14.2f} ms\n"
-            )
-        f.write("=" * 80 + "\n")
+                current_model = get_resnet18_model()
+                pipeline = CompressionPipeline(stages=stages, eval_fns=eval_fns)
 
-    print(f"Results saved to {output_path}")
+                try:
+                    _, report = pipeline.run(current_model)
+                    final_metrics = report["stages"][-1]["metrics_after"]
+                    writer.writerow([
+                        name,
+                        f"{final_metrics['size_mb']:.2f}",
+                        f"{final_metrics['sparsity'] * 100:.2f}",
+                        f"{final_metrics['accuracy']:.4f}",
+                        f"{final_metrics['latency']['mean_ms']:.2f}",
+                    ])
+                except Exception as e:
+                    print(f"Skipping pipeline '{name}' due to error: {e}")
+
+    print(f"Grid search complete. Results saved to {output_path}")
 
 if __name__ == "__main__":
     main()

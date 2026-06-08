@@ -102,3 +102,104 @@ class TestZeroShotDistiller:
             "device",
         ]:
             assert key in cfg, f"Missing config key: {key}"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for the ZeroShotDistiller.
+# ---------------------------------------------------------------------------
+
+class TeacherModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 16, 3, padding=1)
+        self.bn1 = nn.BatchNorm2d(16)
+        self.relu = nn.ReLU()
+        self.flatten = nn.Flatten()
+        self.fc = nn.Linear(16 * 32 * 32, 10)
+
+    def forward(self, x):
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.flatten(x)
+        return self.fc(x)
+
+class StudentModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 8, 3, padding=1)
+        self.relu = nn.ReLU()
+        self.flatten = nn.Flatten()
+        self.fc = nn.Linear(8 * 32 * 32, 10)
+
+    def forward(self, x):
+        x = self.relu(self.conv1(x))
+        x = self.flatten(x)
+        return self.fc(x)
+
+@pytest.fixture
+def teacher_model():
+    return TeacherModel()
+
+@pytest.fixture
+def student_model():
+    return StudentModel()
+
+def test_zeroshotdistiller_initialization():
+    """Test that ZeroShotDistiller initializes correctly."""
+    distiller = ZeroShotDistiller(
+        teacher_model=TeacherModel(),
+        student_model=StudentModel(),
+        input_shape=(1, 3, 32, 32),
+        num_batches=1,
+        num_epochs=1,
+    )
+    assert isinstance(distiller, ZeroShotDistiller)
+    assert distiller.num_epochs == 1
+
+def test_zeroshotdistiller_compress_model(teacher_model, student_model):
+    """Test that the model can be compressed without errors."""
+    distiller = ZeroShotDistiller(
+        teacher_model=teacher_model,
+        student_model=student_model,
+        input_shape=(1, 3, 32, 32),
+        num_batches=1,
+        num_epochs=1,
+    )
+    # The distiller returns the student model, so we pass it in as a dummy
+    compressed_model, _ = distiller.compress(student_model)
+    assert compressed_model is not None
+    assert isinstance(compressed_model, nn.Module)
+    # Check if student model's parameters have been updated (they should have changed)
+    initial_params = [p.clone() for p in student_model.parameters()]
+    distiller.compress(student_model)
+    final_params = list(student_model.parameters())
+
+    params_changed = any(not torch.equal(initial, final) for initial, final in zip(initial_params, final_params))
+    assert params_changed, "Student model parameters did not change after distillation."
+
+def test_generate_synthetic_data(teacher_model):
+    """Test the synthetic data generation."""
+    distiller = ZeroShotDistiller(
+        teacher_model=teacher_model,
+        student_model=StudentModel(),
+        input_shape=(1, 3, 32, 32),
+        num_batches=1,
+        num_epochs=1,
+    )
+    synthetic_data, _ = distiller._generate_synthetic_data(batch_size=16)
+    assert synthetic_data.shape == (16, 3, 32, 32)
+
+def test_distillation_without_bn_layers(student_model):
+    """Test that distillation raises an error if teacher has no BN layers."""
+    # A teacher model without any BatchNorm layers
+    teacher_without_bn = nn.Sequential(
+        nn.Conv2d(3, 16, 3, padding=1),
+        nn.ReLU(),
+        nn.Flatten(),
+        nn.Linear(16 * 32 * 32, 10)
+    )
+    with pytest.raises(ValueError, match="Teacher model must have at least one BatchNorm2d layer"):
+        ZeroShotDistiller(
+            teacher_model=teacher_without_bn,
+            student_model=student_model,
+            input_shape=(1, 3, 32, 32),
+        )
