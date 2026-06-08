@@ -174,10 +174,10 @@ pytest tests/ -v
   - [x] `run_experiment.py` script to compare pipeline orderings.
   - [x] Successfully ran comparisons for pruning and dynamic quantization.
   - [x] Expanded `run_experiment.py` to include `StaticQuantizer` and `ZeroShotDistiller`.
-- [ ] **Pending Tasks**
-  - [ ] Write comprehensive unit tests for all compression techniques in `tests/`.
-  - [ ] Apply the compression pipeline to a real-world pre-trained model (e.g., from `torchvision` or `transformers`).
-  - [ ] Analyze the impact of compression on a downstream task's accuracy (requires a validation dataset).
+- [x] **Pending Tasks**
+  - [x] Write comprehensive unit tests for all compression techniques in `tests/`.
+  - [x] Apply the compression pipeline to a real-world pre-trained model (e.g., from `torchvision` or `transformers`).
+  - [x] Analyze the impact of compression on a downstream task's accuracy (requires a validation dataset).
 
 ---
 
@@ -194,8 +194,8 @@ pytest tests/ -v
 - [x] Write unit tests for all modules
 - [x] Example experiment comparing pipeline orderings
 - [x] Integrate pre-trained vision / NLP models (ResNet, BERT)
-- [ ] Add accuracy evaluation on standard benchmarks (CIFAR-10, GLUE)
-- [ ] Automated pipeline search (grid search / Bayesian optimisation)
+- [x] Add accuracy evaluation on standard benchmarks (CIFAR-10, GLUE)
+- [x] Automated pipeline search (grid search / Bayesian optimisation)
 - [ ] GPU support and profiling
 - [ ] Final report and analysis
 

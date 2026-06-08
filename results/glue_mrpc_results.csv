@@ -1,0 +1,5 @@
+Pipeline,Size (MB),Sparsity (%),Accuracy,Latency (ms)
+Baseline,417.72,0.00,0.6838,9.77
+Dynamic Quantization,173.09,0.00,0.3333,5.55
+Magnitude Pruning (50%),417.72,50.00,0.3162,9.58
+Prune -> Quantize,173.09,0.00,0.3162,5.87

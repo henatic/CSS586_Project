@@ -4,6 +4,7 @@ torchvision>=0.15.0
 
 # Transformer models and tokenizers
 transformers>=4.30.0
+datasets>=2.14.0
 
 # Evaluation and metrics
 numpy>=1.24.0
