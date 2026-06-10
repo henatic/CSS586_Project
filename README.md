@@ -196,8 +196,8 @@ pytest tests/ -v
 - [x] Integrate pre-trained vision / NLP models (ResNet, BERT)
 - [x] Add accuracy evaluation on standard benchmarks (CIFAR-10, GLUE)
 - [x] Automated pipeline search (grid search / Bayesian optimisation)
-- [ ] GPU support and profiling
-- [ ] Final report and analysis
+- [x] GPU support and profiling
+- [x] Final report and analysis
 
 ---
 
