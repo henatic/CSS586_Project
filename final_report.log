@@ -1,0 +1,107 @@
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (MiKTeX 26.2) (preloaded format=pdftex 2026.6.9)  9 JUN 2026 17:19
+entering extended mode
+ restricted \write18 enabled.
+ %&-line parsing enabled.
+**/acmart-primary/final_report.tex
+(acmart-primary/final_report.tex
+! Undefined control sequence.
+l.1 \documentclass
+                  [sigconf]{acmart}
+? 
+! Undefined control sequence.
+l.3 \usepackage
+               {booktabs} % For formal tables
+? 
+! Undefined control sequence.
+l.4 \usepackage
+               {graphicx}
+? 
+! Undefined control sequence.
+l.5 \usepackage
+               {subcaption}
+? 
+! Undefined control sequence.
+l.7 \copyrightyear
+                  {2024}
+? 
+! Undefined control sequence.
+l.8 \acmYear
+            {2024}
+? 
+! Undefined control sequence.
+l.9 \setcopyright
+                 {acmcopyright}
+? 
+! Undefined control sequence.
+l.10 \acmConference
+                   [CSS 586]{Deep Learning Projects}{Spring 2024}{Bothell, W...
+
+? 
+! Undefined control sequence.
+l.11 \acmBooktitle
+                  {Deep Learning Projects, Spring 2024, Bothell, WA, USA}
+? 
+! Undefined control sequence.
+l.12 \acmPrice
+              {15.00}
+? 
+! Undefined control sequence.
+l.13 \acmDOI
+            {10.1145/nnnnnnn.nnnnnnn}
+? 
+! Undefined control sequence.
+l.14 \acmISBN
+             {978-x-xxxx-xxxx-x/YY/MM}
+? 
+! Undefined control sequence.
+l.16 \begin
+           {document}
+? 
+! Undefined control sequence.
+l.17 \title
+           {Optimizing Zero-Shot Model Compression Pipelines}
+? 
+! Undefined control sequence.
+l.19 \author
+            {GitHub Copilot}
+? 
+! Undefined control sequence.
+l.20 \affiliation
+                 {%
+? 
+! Undefined control sequence.
+l.21   \institution
+                   {University of Washington Bothell}
+? 
+! Undefined control sequence.
+l.22   \streetaddress
+                     {18115 Campus Way NE}
+? 
+! Undefined control sequence.
+l.23   \city
+            {Bothell}
+? 
+! Undefined control sequence.
+l.24   \state
+             {WA}
+? 
+! Undefined control sequence.
+l.25   \postcode
+                {98011}
+? 
+! Undefined control sequence.
+l.27 \email
+           {copilot@uw.edu}
+? 
+! Undefined control sequence.
+l.30 \begin
+           {abstract}
+? 
+[1{C:/Users/hdmor/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}] )<C:/Users
+/hdmor/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr10.pfb>
+Output written on final_report.pdf (1 page, 27087 bytes).
+PDF statistics:
+ 10 PDF objects out of 1000 (max. 8388607)
+ 0 named destinations out of 1000 (max. 500000)
+ 1 words of extra memory for PDF output out of 10000 (max. 10000000)
+
